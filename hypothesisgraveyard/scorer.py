@@ -20,12 +20,14 @@ _ENGAGE_PATTERNS = re.compile(
 def _is_engaging(ctx: CitationContext) -> bool:
     """Return True if a citation actually engages with the hypothesis."""
     # background-only intent = just a literature reference, not real engagement
-    if ctx.intents == ["background"]:
+    if [i.lower() for i in ctx.intents] == ["background"]:
         return False
     if _ENGAGE_PATTERNS.search(ctx.context):
         return True
-    # methodology or result intents with any context counts as engaging
-    if any(i in ctx.intents for i in ("methodology", "result")):
+    # A methodology or result intent is engagement on its own. Semantic Scholar
+    # classifies the intent from the citing text, so it stands as evidence even
+    # for the many citations the API returns with no context snippet attached.
+    if any(i.lower() in ("methodology", "result") for i in ctx.intents):
         return True
     return False
 

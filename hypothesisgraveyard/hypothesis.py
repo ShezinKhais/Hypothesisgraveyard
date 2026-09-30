@@ -45,9 +45,15 @@ _NOVEL = (re.compile(
     r'to our knowledge|hitherto unknown)\b',
     re.I), 0.9)
 
-# Ordered strongest signal first.
+# Ordered strongest signal first. extract() takes the highest weight rather than
+# the first hit, so this order only decides ties: _HEDGE and _NOVEL both weigh
+# 0.9, and listing hedge first makes it win when a sentence carries both.
 _SIGNALS = [("propose", _PROPOSE), ("hedge", _HEDGE), ("novel", _NOVEL),
             ("possibility", _POSSIBILITY), ("future", _FUTURE)]
+
+# The weakest signal group. A min_confidence below this admits every match,
+# which is the useful default: callers raise it to demand stronger phrasing.
+MIN_SIGNAL_WEIGHT = 0.6
 
 # Abbreviations that should not be treated as sentence endings
 _ABBREV = re.compile(r'\b(et al|vs|i\.e|e\.g|Fig|vol|pp|Dr|Prof|no|approx)\.$', re.I)
@@ -73,8 +79,15 @@ def _split_sentences(text: str) -> list[str]:
 class HypothesisExtractor:
     """Scans abstracts for hypothesis-like sentences."""
 
-    def extract(self, abstract: str, min_confidence: float = 0.4) -> list[HypothesisSentence]:
-        """Return sentences that look like hypotheses."""
+    def extract(self, abstract: str,
+                min_confidence: float = MIN_SIGNAL_WEIGHT) -> list[HypothesisSentence]:
+        """Return sentences that look like hypotheses.
+
+        min_confidence is compared against the weight of the signal group that
+        matched, so the meaningful range is MIN_SIGNAL_WEIGHT to 1.0. The old
+        default of 0.4 sat below every group and so admitted every match while
+        reading like a filter.
+        """
         results = []
         for sentence in _split_sentences(abstract):
             best_conf   = 0.0

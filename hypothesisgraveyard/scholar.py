@@ -107,7 +107,13 @@ class ScholarClient:
         ctxs = []
         for item in data.get("data", []):
             citing = item.get("citingPaper", {})
-            for ctx_text in item.get("contexts", [""]):
+            # The API sends "contexts": [] when it has no snippet for a citation
+            # rather than omitting the key, so a dict .get default never fires
+            # and every such citation used to produce no CitationContext at all.
+            # Those are exactly the citations that engage least, so dropping them
+            # deleted the evidence of neglect this tool exists to measure. `or`
+            # catches the empty list as well as a missing key.
+            for ctx_text in item.get("contexts") or [""]:
                 ctxs.append(CitationContext(
                     citing_title=citing.get("title", ""),
                     citing_year=citing.get("year") or 0,
@@ -121,6 +127,11 @@ class ScholarClient:
 
         Raises ScholarError if the API keeps returning 429 or cannot be reached,
         rather than returning an empty result that would look like "no papers".
+
+        Every other failure is funnelled into ScholarError too. A 5xx is treated
+        as transient and retried like a 429, since the free tier serves them
+        under load; a 4xx is permanent and reported at once rather than spending
+        the retry budget on a request that cannot succeed.
         """
         if self.demo:
             return _demo_response(url, params or {})
@@ -147,12 +158,28 @@ class ScholarClient:
                 time.sleep(wait)
                 continue
 
-            r.raise_for_status()
-            return r.json()
+            if r.status_code >= 500:
+                log.warning("Server error %d (attempt %d/%d) - retrying",
+                            r.status_code, attempt + 1, MAX_RETRY)
+                time.sleep(2 ** attempt)
+                continue
+
+            if r.status_code >= 400:
+                raise ScholarError(
+                    f"Semantic Scholar rejected the request "
+                    f"(HTTP {r.status_code}). {r.text[:200]}"
+                )
+
+            try:
+                return r.json()
+            except ValueError as e:
+                raise ScholarError(
+                    f"Semantic Scholar returned a response that is not JSON ({e})."
+                ) from e
 
         raise ScholarError(
-            "Semantic Scholar kept rate-limiting the request. Its free tier "
-            "throttles unauthenticated traffic heavily. Set an API key in the "
+            "Semantic Scholar kept rate-limiting or failing the request. Its free "
+            "tier throttles unauthenticated traffic heavily. Set an API key in the "
             "SEMANTIC_SCHOLAR_API_KEY environment variable, or run with --demo "
             "to use bundled sample data."
         )
