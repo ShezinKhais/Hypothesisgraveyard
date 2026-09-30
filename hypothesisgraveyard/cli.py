@@ -95,7 +95,8 @@ def dig(
 
     if not no_html:
         out = html_out or f"{topic.replace(' ', '_')}_graveyard.html"
-        render_html(entries, topic=topic, survival_rate=rate, output_path=Path(out))
+        render_html(entries, topic=topic, survival_rate=rate,
+                    output_path=Path(out), threshold=threshold)
         console.print(f"HTML graveyard -> {out}")
 
 
